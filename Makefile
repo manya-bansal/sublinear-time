@@ -8,6 +8,7 @@ all: run
 run: $(FILENAME).cpp $(BUILD)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $< -o $(BUILD)/$(FILENAME)
 	$(BUILD)/$(FILENAME) files/test.bin \
+	files/diff_10.bin \
 	files/diff_20.bin \
 	files/diff_30.bin \
 	files/diff_70.bin \
@@ -16,8 +17,8 @@ run: $(FILENAME).cpp $(BUILD)
 gen:
 	python3 generate_files.py \
 	files/test.bin \
-	80000 \
-	0.2 0.3 0.7 0.8
+	30000 \
+	0.1 0.2 0.3 0.7 0.8
  
 $(BUILD): 
 	@mkdir  -p $(BUILD)
