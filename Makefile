@@ -16,7 +16,7 @@ run: $(FILENAME).cpp $(BUILD)
 gen:
 	python3 generate_files.py \
 	files/test.bin \
-	1000000 \
+	80000 \
 	0.2 0.3 0.7 0.8
  
 $(BUILD): 

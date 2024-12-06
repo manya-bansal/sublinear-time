@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cmath>
 #include <fstream>
+#include <iomanip> // For std::hex
 #include <iostream>
 #include <random>
 #include <vector>
@@ -35,7 +36,7 @@ typedef graph_traits<Graph>::edge_iterator edge_iterator;
 #define ITERATIONS 1
 #endif
 
-typedef double (*HammingDistanceFunc)(int, int, char *, char *);
+typedef double (*HammingDistanceFunc)(int, int, unsigned *, unsigned *);
 
 // Function to read the content of a file into a char*
 char *readFileToCharPtr(const std::string &filename, int &size) {
@@ -69,7 +70,7 @@ char *readFileToCharPtr(const std::string &filename, int &size) {
 }
 
 // Add k dummy arg to make it match interface of estimateHammingDistance
-double preciseHammingDistance(int N, int k, char *f1, char *f2) {
+double preciseHammingDistance(int N, int k, unsigned *f1, unsigned *f2) {
   int disagreement = 0;
   for (int i = 0; i < N; i++) {
     if (f1[i] != f2[i]) {
@@ -80,7 +81,7 @@ double preciseHammingDistance(int N, int k, char *f1, char *f2) {
 }
 
 // Function to estimate the Hamming distance using random sampling
-double estimateHammingDistance(int N, int k, char *f1, char *f2) {
+double estimateHammingDistance(int N, int k, unsigned *f1, unsigned *f2) {
   // Step 1: Initialize random number generator for sampling
   std::random_device rd;
   std::mt19937 gen(rd());
@@ -105,7 +106,8 @@ double estimateHammingDistance(int N, int k, char *f1, char *f2) {
   return totalHammingDistanceEstimate;
 }
 
-void diff(std::vector<std::string> filenames, HammingDistanceFunc f) {
+std::pair<Graph, std::vector<Edge>> diff(std::vector<std::string> filenames,
+                                         HammingDistanceFunc f) {
   size_t num_files = filenames.size();
   Graph g((num_files * (num_files - 1)) / 2);
   for (size_t i = 0; i < num_files; i++) {
@@ -115,10 +117,15 @@ void diff(std::vector<std::string> filenames, HammingDistanceFunc f) {
       int size_local = 0;
       char *cur_file = readFileToCharPtr(filenames[j], size_local);
       assert(size == size_local);
-      DEBUG(std::cout << "Estimated hamming distance b/w " << filenames[i]
-                      << " and " << filenames[j] << " is "
-                      << f(size, SAMPLES, data, cur_file) << std::endl);
-      add_edge(i, j, f(size, SAMPLES, data, cur_file), g);
+      DEBUG(std::cout << "Hamming distance b/w " << filenames[i] << " and "
+                      << filenames[j] << " is "
+                      << f(size / (sizeof(unsigned)), SAMPLES, (unsigned *)data,
+                           (unsigned *)cur_file)
+                      << std::endl);
+      add_edge(i, j,
+               f(size / (sizeof(unsigned)), SAMPLES, (unsigned *)data,
+                 (unsigned *)cur_file),
+               g);
       delete cur_file;
     }
     delete data;
@@ -128,6 +135,33 @@ void diff(std::vector<std::string> filenames, HammingDistanceFunc f) {
   DEBUG(for (const auto &e : mst_edges) {
     std::cout << source(e, g) << " - " << target(e, g) << endl;
   })
+  return {g, mst_edges};
+}
+
+double generate_percent_storage(Graph g, std::vector<Edge> mst_edges,
+                                std::vector<std::string> filenames) {
+  size_t total_bytes = 0;
+  double compressed_bytes = 0;
+  for (const auto &e : mst_edges) {
+    DEBUG(std::cout << source(e, g) << " - " << target(e, g) << endl);
+    total_bytes += 1;
+    int size = 0;
+    char *base = readFileToCharPtr(filenames[source(e, g)], size);
+    char *comp = readFileToCharPtr(filenames[target(e, g)], size);
+    double fraction = estimateHammingDistance(
+        size / (sizeof(unsigned)), SAMPLES, (unsigned *)base, (unsigned *)comp);
+    DEBUG(std::cout << "weight = " << fraction << std::endl;);
+    if (fraction > 0.5) {
+      compressed_bytes += 1;
+      DEBUG(std::cout << "skipping" << std::endl);
+      continue;
+    }
+
+    fraction = preciseHammingDistance(size / (sizeof(unsigned)), 0,
+                                      (unsigned *)base, (unsigned *)comp);
+    compressed_bytes += (fraction * 2);
+  }
+  return compressed_bytes / total_bytes;
 }
 
 int main(int argc, char *argv[]) {
@@ -155,5 +189,8 @@ int main(int argc, char *argv[]) {
   std::cout << my_benchmark::benchmark(RUNS, ITERATIONS, func_precise)
             << std::endl;
 
+  auto mst = diff(filenames, estimateHammingDistance);
+  std::cout << generate_percent_storage(mst.first, mst.second, filenames)
+            << std::endl;
   return 0;
 }
