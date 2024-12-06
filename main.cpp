@@ -5,6 +5,38 @@
 #include <random>
 #include <vector>
 
+#include <boost/graph/adjacency_list.hpp>
+#include <boost/graph/kruskal_min_spanning_tree.hpp>
+#include <boost/graph/properties.hpp>
+
+#include "benchmark.h"
+
+using namespace boost;
+using namespace std;
+
+typedef adjacency_list<vecS, vecS, undirectedS, no_property,
+                       property<edge_weight_t, double>>
+    Graph;
+typedef graph_traits<Graph>::edge_descriptor Edge;
+typedef graph_traits<Graph>::edge_iterator edge_iterator;
+
+// Should be enough for 95% confidence interval
+#define SAMPLES 384
+
+// #define DEBUG_
+
+#ifdef DEBUG_
+#define DEBUG(x) x;
+#define RUNS 1
+#define ITERATIONS 1
+#else
+#define DEBUG(x) // No-op if DEBUG is not defined
+#define RUNS 5
+#define ITERATIONS 1
+#endif
+
+typedef double (*HammingDistanceFunc)(int, int, char *, char *);
+
 // Function to read the content of a file into a char*
 char *readFileToCharPtr(const std::string &filename, int &size) {
   std::ifstream file(filename,
@@ -36,7 +68,8 @@ char *readFileToCharPtr(const std::string &filename, int &size) {
   return buffer;
 }
 
-double preciseHammingDistance(int N, char *f1, char *f2) {
+// Add k dummy arg to make it match interface of estimateHammingDistance
+double preciseHammingDistance(int N, int k, char *f1, char *f2) {
   int disagreement = 0;
   for (int i = 0; i < N; i++) {
     if (f1[i] != f2[i]) {
@@ -72,9 +105,9 @@ double estimateHammingDistance(int N, int k, char *f1, char *f2) {
   return totalHammingDistanceEstimate;
 }
 
-void precise_diff(std::vector<std::string> filenames) {
-
+void diff(std::vector<std::string> filenames, HammingDistanceFunc f) {
   size_t num_files = filenames.size();
+  Graph g((num_files * (num_files - 1)) / 2);
   for (size_t i = 0; i < num_files; i++) {
     int size = 0;
     char *data = readFileToCharPtr(filenames[i], size);
@@ -82,33 +115,19 @@ void precise_diff(std::vector<std::string> filenames) {
       int size_local = 0;
       char *cur_file = readFileToCharPtr(filenames[j], size_local);
       assert(size == size_local);
-      std::cout << "Precise hamming distance b/w " << filenames[i] << " and "
-                << filenames[j] << " is "
-                << preciseHammingDistance(size, data, cur_file) << std::endl;
+      DEBUG(std::cout << "Estimated hamming distance b/w " << filenames[i]
+                      << " and " << filenames[j] << " is "
+                      << f(size, SAMPLES, data, cur_file) << std::endl);
+      add_edge(i, j, f(size, SAMPLES, data, cur_file), g);
       delete cur_file;
     }
     delete data;
   }
-}
-
-void sublinear_diff(std::vector<std::string> filenames) {
-
-  size_t num_files = filenames.size();
-  for (size_t i = 0; i < num_files; i++) {
-    int size = 0;
-    char *data = readFileToCharPtr(filenames[i], size);
-    for (size_t j = i + 1; j < num_files; j++) {
-      int size_local = 0;
-      char *cur_file = readFileToCharPtr(filenames[j], size_local);
-      assert(size == size_local);
-      std::cout << "Estimated hamming distance b/w " << filenames[i] << " and "
-                << filenames[j] << " is "
-                << estimateHammingDistance(size, 200, data, cur_file)
-                << std::endl;
-      delete cur_file;
-    }
-    delete data;
-  }
+  std::vector<Edge> mst_edges;
+  kruskal_minimum_spanning_tree(g, std::back_inserter(mst_edges));
+  DEBUG(for (const auto &e : mst_edges) {
+    std::cout << source(e, g) << " - " << target(e, g) << endl;
+  })
 }
 
 int main(int argc, char *argv[]) {
@@ -124,7 +143,17 @@ int main(int argc, char *argv[]) {
     filenames.push_back(filename);
   }
 
-  sublinear_diff(filenames);
-  precise_diff(filenames);
+  std::function<void(void)> func_sub = [&]() {
+    diff(filenames, estimateHammingDistance);
+  };
+
+  std::function<void(void)> func_precise = [&]() {
+    diff(filenames, preciseHammingDistance);
+  };
+
+  std::cout << my_benchmark::benchmark(RUNS, ITERATIONS, func_sub) << std::endl;
+  std::cout << my_benchmark::benchmark(RUNS, ITERATIONS, func_precise)
+            << std::endl;
+
   return 0;
 }
