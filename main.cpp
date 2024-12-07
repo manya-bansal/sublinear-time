@@ -85,13 +85,18 @@ double estimateHammingDistance(int N, int k, unsigned *f1, unsigned *f2) {
   // Step 1: Initialize random number generator for sampling
   std::random_device rd;
   std::mt19937 gen(rd());
-  std::uniform_int_distribution<> dis(1, N); // Sample from 1 to N
+  std::uniform_int_distribution<> dis(0, N - 1); // Sample from 1 to N
+  std::vector<int> randomNumbers;
+  for (int i = 0; i < k; ++i) {
+    randomNumbers.push_back(dis(gen));
+  }
+  std::sort(randomNumbers.begin(), randomNumbers.end());
 
   // Step 2: Count the number of disagreements in the sample
   int disagreements = 0;
 
   for (int i = 0; i < k; ++i) {
-    int x = dis(gen); // Randomly pick a point from the domain
+    int x = randomNumbers[i]; // Randomly pick a point from the domain
     if (f1[x] != f2[x]) {
       disagreements++;
     }
@@ -106,17 +111,15 @@ double estimateHammingDistance(int N, int k, unsigned *f1, unsigned *f2) {
   return totalHammingDistanceEstimate;
 }
 
-std::pair<Graph, std::vector<Edge>> diff(std::vector<std::string> filenames,
-                                         HammingDistanceFunc f) {
+std::pair<Graph, std::vector<Edge>> diff(std::vector<char *> filenames,
+                                         HammingDistanceFunc f, int size) {
   size_t num_files = filenames.size();
   Graph g((num_files * (num_files - 1)) / 2);
   for (size_t i = 0; i < num_files; i++) {
-    int size = 0;
-    char *data = readFileToCharPtr(filenames[i], size);
+
+    char *data = filenames[i];
     for (size_t j = i + 1; j < num_files; j++) {
-      int size_local = 0;
-      char *cur_file = readFileToCharPtr(filenames[j], size_local);
-      assert(size == size_local);
+      char *cur_file = filenames[j];
       DEBUG(std::cout << "Hamming distance b/w " << filenames[i] << " and "
                       << filenames[j] << " is "
                       << f(size / (sizeof(unsigned)), SAMPLES, (unsigned *)data,
@@ -126,9 +129,7 @@ std::pair<Graph, std::vector<Edge>> diff(std::vector<std::string> filenames,
                f(size / (sizeof(unsigned)), SAMPLES, (unsigned *)data,
                  (unsigned *)cur_file),
                g);
-      delete cur_file;
     }
-    delete data;
   }
   std::vector<Edge> mst_edges;
   kruskal_minimum_spanning_tree(g, std::back_inserter(mst_edges));
@@ -172,25 +173,34 @@ int main(int argc, char *argv[]) {
   }
 
   std::vector<std::string> filenames;
+  std::vector<char *> data;
+  int size = 0;
   for (int i = 1; i < argc; ++i) {
     std::string filename = argv[i];
     filenames.push_back(filename);
+    data.push_back(readFileToCharPtr(filename, size));
   }
 
   std::function<void(void)> func_sub = [&]() {
-    diff(filenames, estimateHammingDistance);
+    diff(data, estimateHammingDistance, size);
   };
 
   std::function<void(void)> func_precise = [&]() {
-    diff(filenames, preciseHammingDistance);
+    diff(data, preciseHammingDistance, size);
   };
 
-  std::cout << my_benchmark::benchmark(RUNS, ITERATIONS, func_sub) << std::endl;
-  std::cout << my_benchmark::benchmark(RUNS, ITERATIONS, func_precise)
-            << std::endl;
+  // std::cout << my_benchmark::benchmark(RUNS, ITERATIONS, func_sub) <<
+  // std::endl; std::cout << my_benchmark::benchmark(RUNS, ITERATIONS,
+  // func_precise)
+  //           << std::endl;
 
-  auto mst = diff(filenames, estimateHammingDistance);
+  auto mst = diff(data, estimateHammingDistance, size);
   std::cout << generate_percent_storage(mst.first, mst.second, filenames)
             << std::endl;
+
+  for (int i = 1; i < argc; ++i) {
+    delete data[i];
+  }
+
   return 0;
 }

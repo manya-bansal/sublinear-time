@@ -17,9 +17,25 @@ run: $(FILENAME).cpp $(BUILD)
 gen:
 	python3 generate_files.py \
 	files/test.bin \
-	30000 \
+	50000 \
 	0.1 0.2 0.3 0.7 0.8
  
+
+gen_small:
+	python3 generate_files.py \
+	files/test.bin \
+	1000000 \
+	0.45 0.49 0.50 0.51 0.55
+
+run_small: $(FILENAME).cpp $(BUILD)
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $< -o $(BUILD)/$(FILENAME)
+	$(BUILD)/$(FILENAME) files/test.bin \
+	files/diff_45.bin \
+	files/diff_49.bin \
+	files/diff_50.bin \
+	files/diff_51.bin \
+	files/diff_55.bin >> count
+
 $(BUILD): 
 	@mkdir  -p $(BUILD)
 
